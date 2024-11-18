@@ -54,3 +54,23 @@ sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=voting_clf.classe
 plt.xlabel("Predicted")
 plt.ylabel("True")
 plt.show()
+
+def predict_intent(model, vectorizer):
+    # Take input from the user
+    input_text = input("Enter text to predict its intent: ")
+
+    # Preprocess the text (same as training)
+    input_text = input_text.lower()
+    input_text = re.sub(r'[^\w\s]', '', input_text)
+    input_text = ' '.join([lemmatizer.lemmatize(word) for word in input_text.split()])
+
+    # Transform the text using the vectorizer
+    input_vec = vectorizer.transform([input_text])
+
+    # Predict the intent
+    prediction = model.predict(input_vec)
+    print(f"Predicted intent: {prediction[0]}")
+    predict_intent(model, vectorizer)
+
+# Call the function after training the model
+predict_intent(voting_clf, vectorizer)
