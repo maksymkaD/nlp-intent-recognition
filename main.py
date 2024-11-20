@@ -1,8 +1,8 @@
-
 import pandas as pd
 import re
 import nltk
 from nltk.stem import WordNetLemmatizer
+from nltk.corpus import stopwords
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -12,37 +12,69 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 import matplotlib.pyplot as plt
 import seaborn as sns
 import time
+import os
+from sklearn.metrics import roc_curve, auc
+from sklearn.preprocessing import label_binarize
 
 # Install necessary NLTK resources
 nltk.download('wordnet')
 nltk.download('omw-1.4')
-
-# Read and preprocess data
-data = pd.read_csv('data/test.csv')
-data['text'] = data['text'].str.lower()
-data['text'] = data['text'].apply(lambda x: re.sub(r'[^\w\s]', '', x))
+nltk.download('stopwords')
 lemmatizer = WordNetLemmatizer()
-data['text'] = data['text'].apply(lambda x: ' '.join([lemmatizer.lemmatize(word) for word in x.split()]))
 
-# Split data
-X_train, X_test, y_train, y_test = train_test_split(data['text'], data['intent'], test_size=0.2, random_state=42)
+# Read and preprocess training and testing data
+train_data = pd.read_csv('data/train.csv')
 
-# Parameters for testing
+# Preprocess both datasets
+train_data['text'] = train_data['text'].str.lower()
+train_data['intent'] = train_data['intent'].str.lower()
+train_data['text'] = train_data['text'].apply(lambda x: re.sub(r'[^\w\s]', '', x))
+# train_data['text'] = train_data['text'].apply(lambda x: ' '.join([lemmatizer.lemmatize(word) for word in x.split()]))
+
+# Your dataset
+X = train_data['text']
+y = train_data['intent']
+
+# Use random_state to ensure reproducibility
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+# #Parameters for hard-votig with a single-model
+# param_grid = {
+#     'max_features': [500, 1000],
+#     'n_estimators': [50, 100],  
+#     'voting': ['hard'],  
+#     'weights': [(1, 0, 0), (0, 1, 0), (0, 0, 1)],  
+# }
+
+# Parameters for testing 1
+# param_grid = {
+#     'max_features': [500, 1000],
+#     'n_estimators': [50, 100],
+#     'voting': ['soft', 'hard'],
+#     'weights': [(1, 1, 1), (2, 1, 1)], 
+# }
+
+# Parameters for testing 2 (try increase max features)
+# param_grid = {
+#     'max_features': [2000],
+#     'n_estimators': [50],
+#     'voting': ['soft'],
+#     'weights': [(1, 1, 1)],
+# }
+
+#Parameters for single model
 param_grid = {
-    'max_features': [500, 1000],
+    'max_features': [1000, 2000],
     'n_estimators': [50, 100],
-    'voting': ['soft', 'hard'],
-    'weights': [(1, 1, 1), (2, 1, 1)],
+    'voting': ['soft'],
+    'weights': [(1, 1, 1)],
 }
 
 # Results storage
 results = []
 
-# Function for preprocessing and vectorizing
-def preprocess_and_vectorize(data, max_features):
-    vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1, 2))
-    X_vec = vectorizer.fit_transform(data['text'])
-    return X_vec, vectorizer
+more_visuals = True
 
 # Parameter testing loop
 for max_features in param_grid['max_features']:
@@ -51,28 +83,40 @@ for max_features in param_grid['max_features']:
             for weights in param_grid['weights']:
                 start_time = time.time()  # Start timing
 
-                # Vectorization
-                X_train_vec, vectorizer = preprocess_and_vectorize(data, max_features)
+                # Preprocess and vectorize training and test sets separately
+                vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1, 2), min_df=2, max_df=0.95)
+                X_train_vec = vectorizer.fit_transform(X_train)
                 X_test_vec = vectorizer.transform(X_test)
 
-                # Models
-                model_lr = LogisticRegression(max_iter=500, solver='saga')
-                model_et = ExtraTreesClassifier(n_estimators=n_estimators, n_jobs=-1)
-                model_nb = MultinomialNB()
+                #Uncomment to run different models
+                # # Models
+                # model_lr = LogisticRegression(max_iter=500, solver='saga')
+                # model_et = ExtraTreesClassifier(n_estimators=n_estimators, n_jobs=-1)
+                # model_nb = MultinomialNB()
 
-                # Voting Classifier
-                voting_clf = VotingClassifier(
-                    estimators=[('lr', model_lr), ('et', model_et), ('nb', model_nb)],
-                    voting=voting,
-                    weights=weights,
-                    n_jobs=-1
-                )
+                # # Voting Classifier
+                # voting_clf = VotingClassifier(
+                #     estimators=[('lr', model_lr), ('et', model_et), ('nb', model_nb)],
+                #     voting=voting,
+                #     weights=weights,
+                #     n_jobs=-1
+                # )
+
+                # # Training
+                # voting_clf.fit(X_train_vec, y_train)
+
+                # # Prediction
+                # predictions = voting_clf.predict(X_test_vec)
+
+
+                # Logistic Regression Model
+                model_lr = LogisticRegression(max_iter=500, solver='saga')
 
                 # Training
-                voting_clf.fit(X_train_vec, y_train)
+                model_lr.fit(X_train_vec, y_train)
 
                 # Prediction
-                predictions = voting_clf.predict(X_test_vec)
+                predictions = model_lr.predict(X_test_vec)
 
                 # Evaluation
                 accuracy = accuracy_score(y_test, predictions)
@@ -88,19 +132,47 @@ for max_features in param_grid['max_features']:
                     'time': elapsed_time
                 })
 
+                # Classification Report
+                print(f"Config:")
+                report = classification_report(y_test, predictions, target_names=train_data['intent'].unique(), output_dict=True)
+                df_report = pd.DataFrame(report).transpose()
+                print(df_report.to_string(index=True))
+
                 # Visualization
                 print(f"Config: max_features={max_features}, n_estimators={n_estimators}, voting={voting}, weights={weights}")
                 print(f"Accuracy: {accuracy:.4f}, Time: {elapsed_time:.2f} seconds")
 
                 # Confusion Matrix
-                cm = confusion_matrix(y_test, predictions, normalize='true')
-                plt.figure(figsize=(8, 6))
-                sns.heatmap(cm, annot=True, fmt=".2f", cmap="Blues", xticklabels=voting_clf.classes_, yticklabels=voting_clf.classes_)
-                plt.title(f"Confusion Matrix
-(max_features={max_features}, n_estimators={n_estimators})")
-                plt.xlabel("Predicted")
-                plt.ylabel("True")
-                plt.show()
+
+                #plt.show()
+                plt.savefig(f"results/confusion_matrix_{max_features}_{n_estimators}_{voting}_{weights}.png")
+                if(more_visuals):
+                    cm = confusion_matrix(y_test, predictions, normalize='true')
+                    plt.figure(figsize=(9, 7))
+                    sns.heatmap(cm, annot=True, fmt=".2f", cmap="Blues", xticklabels=train_data['intent'].unique(), yticklabels=train_data['intent'].unique())
+                    plt.title(f"Confusion Matrix (max_features={max_features}, n_estimators={n_estimators})")
+                    plt.xlabel("Predicted")
+                    plt.ylabel("True")
+                    report = classification_report(y_test, predictions, target_names=train_data['intent'].unique(), output_dict=True)
+                    report_df = pd.DataFrame(report).iloc[:-1, :-1]  # Exclude 'accuracy' row and 'support' column
+                    plt.figure(figsize=(12, 7))
+                    sns.heatmap(report_df, annot=True, cmap="YlGnBu", fmt=".2f")
+                    plt.title(f"Classification Report (max_features={max_features}, n_estimators={n_estimators})")
+                    plt.savefig(f"results/classification_report_{max_features}_{n_estimators}_{voting}_{weights}.png")
+                    y_test_bin = label_binarize(y_test, classes=train_data['intent'].unique())
+                    if(voting=='soft'):
+                        predictions_bin = model_lr.predict_proba(X_test_vec)
+                        for i, class_name in enumerate(model_lr.classes_):
+                            fpr, tpr, _ = roc_curve(y_test_bin[:, i], predictions_bin[:, i])
+                            roc_auc = auc(fpr, tpr)
+                            plt.figure(figsize=(10, 7))
+                            plt.plot(fpr, tpr, label=f"Class {class_name} (AUC={roc_auc:.2f})")
+                        plt.plot([0, 1], [0, 1], 'k--')  # Random guess line
+                        plt.title("ROC Curve (Multiclass)")
+                        plt.xlabel("False Positive Rate")
+                        plt.ylabel("True Positive Rate")
+                        plt.legend(loc="lower right")
+                        plt.savefig(f"results/roc_curve_{max_features}_{n_estimators}_{voting}_{weights}.png")
 
 # Save results to DataFrame
 results_df = pd.DataFrame(results)
@@ -110,6 +182,15 @@ best_result = results_df.sort_values(by='accuracy', ascending=False).iloc[0]
 print("Best Configuration:", best_result)
 
 # Save results to file
-results_file = '/mnt/data/test_results_with_timing.csv'
+results_file = 'data/output.csv'
+
+# Auto-increment logic
+if os.path.exists(results_file):
+    base, ext = os.path.splitext(results_file)
+    counter = 1
+    while os.path.exists(f"{base}_{counter}{ext}"):
+        counter += 1
+    results_file = f"{base}_{counter}{ext}"
+
 results_df.to_csv(results_file, index=False)
 print(f"Results saved to {results_file}")
