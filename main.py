@@ -68,7 +68,7 @@ param_grid = {
     'max_features': [1000, 2000],
     'n_estimators': [50, 100],
     'voting': ['soft'],
-    'weights': [(1, 1, 1)],
+    'weights': [(1)],
 }
 
 # Results storage
@@ -149,10 +149,12 @@ for max_features in param_grid['max_features']:
                 if(more_visuals):
                     cm = confusion_matrix(y_test, predictions, normalize='true')
                     plt.figure(figsize=(9, 7))
+                    print(train_data['intent'].unique())
                     sns.heatmap(cm, annot=True, fmt=".2f", cmap="Blues", xticklabels=train_data['intent'].unique(), yticklabels=train_data['intent'].unique())
                     plt.title(f"Confusion Matrix (max_features={max_features}, n_estimators={n_estimators})")
                     plt.xlabel("Predicted")
                     plt.ylabel("True")
+                    plt.savefig(f"results/confusion_matrix_{max_features}_{n_estimators}_{voting}_{weights}.png")
                     report = classification_report(y_test, predictions, target_names=train_data['intent'].unique(), output_dict=True)
                     report_df = pd.DataFrame(report).iloc[:-1, :-1]  # Exclude 'accuracy' row and 'support' column
                     plt.figure(figsize=(12, 7))
@@ -160,19 +162,6 @@ for max_features in param_grid['max_features']:
                     plt.title(f"Classification Report (max_features={max_features}, n_estimators={n_estimators})")
                     plt.savefig(f"results/classification_report_{max_features}_{n_estimators}_{voting}_{weights}.png")
                     y_test_bin = label_binarize(y_test, classes=train_data['intent'].unique())
-                    if(voting=='soft'):
-                        predictions_bin = model_lr.predict_proba(X_test_vec)
-                        for i, class_name in enumerate(model_lr.classes_):
-                            fpr, tpr, _ = roc_curve(y_test_bin[:, i], predictions_bin[:, i])
-                            roc_auc = auc(fpr, tpr)
-                            plt.figure(figsize=(10, 7))
-                            plt.plot(fpr, tpr, label=f"Class {class_name} (AUC={roc_auc:.2f})")
-                        plt.plot([0, 1], [0, 1], 'k--')  # Random guess line
-                        plt.title("ROC Curve (Multiclass)")
-                        plt.xlabel("False Positive Rate")
-                        plt.ylabel("True Positive Rate")
-                        plt.legend(loc="lower right")
-                        plt.savefig(f"results/roc_curve_{max_features}_{n_estimators}_{voting}_{weights}.png")
 
 # Save results to DataFrame
 results_df = pd.DataFrame(results)
